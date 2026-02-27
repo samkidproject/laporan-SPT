@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>lapor SPT 2025 - Pegawai Kejaksaan se-Lampung</title>
+    
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    
+    <!-- Scripts CDN -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>
+
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f8fafc; }
+        .kejati-blue { background-color: #003366; }
+        .kejati-yellow { color: #FFD700; }
+        .bg-kejati-yellow { background-color: #FFD700; }
+        
+        .glass-card {
+            background: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 1.5rem;
+        }
+
+        .input-focus-effect:focus {
+            border-color: #003366;
+            box-shadow: 0 0 0 4px rgba(0, 51, 102, 0.1);
+        }
+
+        .gradient-button {
+            background: linear-gradient(135deg, #003366 0%, #004080 100%);
+            transition: all 0.3s ease;
+        }
+
+        .gradient-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(0, 51, 102, 0.2);
+        }
+
+        .custom-scroll::-webkit-scrollbar { width: 6px; }
+        .custom-scroll::-webkit-scrollbar-track { background: transparent; }
+        .custom-scroll::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
+
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        .loading-spinner {
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255, 215, 0, 0.3);
+            border-top: 3px solid #FFD700;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        .success-card {
+            background: linear-gradient(145deg, #ffffff, #f0fdf4);
+            border: 2px solid #22c55e;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        // --- KONFIGURASI ---
+        const SHEET_ID = '1t3kawKlx4hMK80FaTau9fC_nmJLh-AiK';
+        const GID = '25159779';
+        const CSV_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=${GID}`;
+        const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbz4GPh0Kd8nbtZmck9sr3WD1tdIHodGuRzTpJj1O9bSUk6SjSdMUGYtvm40nKHOHc5JUw/exec";
+
+        function App() {
+            const [dataPegawai, setDataPegawai] = useState([]);
+            const [searchQuery, setSearchQuery] = useState('');
+            const [searchResults, setSearchResults] = useState([]);
+            const [selectedPegawai, setSelectedPegawai] = useState(null);
+            const [isSearching, setIsSearching] = useState(false);
+            const [isLoadingData, setIsLoadingData] = useState(true);
+            const [status, setStatus] = useState('connecting');
+            
+            const [tahunLaporan, setTahunLaporan] = useState('2025');
+            const [bidang, setBidang] = useState('');
+            const [file, setFile] = useState(null);
+            const [isSubmitting, setIsSubmitting] = useState(false);
+            const [isSuccess, setIsSuccess] = useState(false);
+            const [submissionTime, setSubmissionTime] = useState('');
+
+            const fileInputRef = useRef(null);
+            const searchRef = useRef(null);
+
+            useEffect(() => {
+                fetchPegawaiData();
+                const handleClickOutside = (event) => {
+                    if (searchRef.current && !searchRef.current.contains(event.target)) {
+                        setIsSearching(false);
+                    }
+                };
+                document.addEventListener('mousedown', handleClickOutside);
+                return () => document.removeEventListener('mousedown', handleClickOutside);
+            }, []);
+
+            useEffect(() => {
+                if (isSuccess && window.lucide) lucide.createIcons();
+            }, [isSuccess]);
+
+            const fetchPegawaiData = async () => {
+                try {
+                    setStatus('connecting');
+                    const response = await fetch(CSV_URL);
+                    const csvText = await response.text();
+                    
+                    Papa.parse(csvText, {
+                        header: false,
+                        skipEmptyLines: true,
+                        complete: (results) => {
+                            const rows = results.data;
+                            const parsed = rows.slice(1).map(cols => ({
+                                nama: cols[0]?.trim() || '',
+                                nip: cols[1]?.trim() || '',
+                                pangkat: cols[2]?.trim() || '',
+                                jabatan: cols[3]?.trim() || '',
+                                satker: cols[4]?.trim() || ''
+                            })).filter(p => p.nama.length > 2);
+                            
+                            setDataPegawai(parsed);
+                            setIsLoadingData(false);
+                            setStatus('live');
+                        }
+                    });
+                } catch (error) {
+                    console.error('Error:', error);
+                    setStatus('error');
+                }
+            };
+
+            const handleSearch = (query) => {
+                setSearchQuery(query);
+                if (query.length < 2) {
+                    setSearchResults([]);
+                    setIsSearching(false);
+                    return;
+                }
+                const filtered = dataPegawai.filter(p => 
+                    p.nama.toLowerCase().includes(query.toLowerCase()) || 
+                    p.nip.toLowerCase().includes(query.toLowerCase())
+                ).slice(0, 10);
+                setSearchResults(filtered);
+                setIsSearching(true);
+            };
+
+            const readFileAsBase64 = (file) => {
+                return new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = () => {
+                        const result = reader.result;
+                        const commaIndex = result.indexOf(',');
+                        resolve(commaIndex > -1 ? result.substring(commaIndex + 1) : result);
+                    };
+                    reader.onerror = reject;
+                    reader.readAsDataURL(file);
+                });
+            };
+
+            const handleSubmit = async (e) => {
+                e.preventDefault();
+                if (!selectedPegawai || isSubmitting) return;
+                setIsSubmitting(true);
+
+                try {
+                    let base64Data = "";
+                    let type = "";
+                    if (file) {
+                        if (file.size > 3 * 1024 * 1024) {
+                            alert("Maksimal 3MB");
+                            setIsSubmitting(false);
+                            return;
+                        }
+                        base64Data = await readFileAsBase64(file);
+                        type = file.type;
+                    }
+
+                    const payload = {
+                        nama: selectedPegawai.nama,
+                        nip: selectedPegawai.nip,
+                        jabatan: selectedPegawai.jabatan,
+                        pangkat: selectedPegawai.pangkat,
+                        satker: selectedPegawai.satker,
+                        tahun: tahunLaporan,
+                        bidang: bidang,
+                        fileName: file ? file.name : 'Tanpa File',
+                        fileData: base64Data,
+                        mimeType: type
+                    };
+
+                    await fetch(SCRIPT_URL, {
+                        method: 'POST',
+                        mode: 'no-cors',
+                        body: JSON.stringify(payload)
+                    });
+                    
+                    // Set timestamp saat ini
+                    const now = new Date();
+                    const formattedDate = now.toLocaleDateString('id-ID', {
+                        day: '2-digit',
+                        month: 'long',
+                        year: 'numeric'
+                    });
+                    const formattedTime = now.toLocaleTimeString('id-ID', {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        second: '2-digit'
+                    });
+                    setSubmissionTime(`${formattedDate}, pukul ${formattedTime} WIB`);
+                    
+                    setIsSuccess(true);
+                } catch (error) {
+                    alert("Gagal mengirim data.");
+                } finally {
+                    setIsSubmitting(false);
+                }
+            };
+
+            return (
+                <div className="min-h-screen pb-20">
+                    <nav className="sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b border-slate-100 px-4 py-4 shadow-sm">
+                        <div className="max-w-md mx-auto flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <div className="bg-[#003366] p-2 rounded-xl shadow-md">
+                                    <i data-lucide="database" className="text-[#FFD700] w-5 h-5"></i>
+                                </div>
+                                <div>
+                                    <h2 className="text-sm font-bold text-blue-900 uppercase tracking-tight">laporan SPT 2025</h2>
+                                    <p className="text-[10px] text-blue-600 font-semibold uppercase">Pegawai Kejaksaan se-Lampung</p>
+                                </div>
+                            </div>
+                            <div className={`flex items-center gap-2 px-3 py-1 rounded-full border ${status === 'live' ? 'bg-green-50 border-green-200' : 'bg-amber-50 border-amber-200'}`}>
+                                <div className={`w-2 h-2 rounded-full ${status === 'live' ? 'bg-green-500' : 'bg-amber-500 animate-pulse'}`}></div>
+                                <span className="text-[10px] font-bold uppercase text-slate-700">{status === 'live' ? 'Online' : 'Loading'}</span>
+                            </div>
+                        </div>
+                    </nav>
+
+                    <main className="max-w-md mx-auto px-5 mt-8">
+                        <div className="mb-8 border-l-4 border-[#FFD700] pl-4">
+                            <h1 className="text-L font-black text-blue-950 uppercase">SPT Coretax</h1>
+                            <p className="text-slate-500 text-sm mt-1">
+                                Pastikan SPT yang diunggah adalah SPT Tahunan periode Januari–Desember yang telah dilaporkan melalui Coretax. 
+                                Unggah hanya SPT final yang telah berhasil dikirim (sesuai BPE).
+                            </p>
+                        </div>
+
+                        <form onSubmit={handleSubmit} className="space-y-6">
+                            <div className="space-y-2 relative" ref={searchRef}>
+                                <label className="text-[11px] font-bold text-blue-800 uppercase flex items-center gap-2">
+                                    <i data-lucide="search" className="w-3 h-3"></i> Cari Nama Pegawai
+                                </label>
+                                <div className="relative">
+                                    <input 
+                                        type="text" 
+                                        value={searchQuery}
+                                        onChange={(e) => handleSearch(e.target.value)}
+                                        className="w-full h-14 pl-4 pr-10 bg-white border border-slate-200 rounded-2xl text-slate-700 font-medium input-focus-effect outline-none shadow-sm" 
+                                        placeholder="Ketik nama..."
+                                        disabled={isLoadingData}
+                                    />
+                                </div>
+
+                                {isSearching && (
+                                    <div className="absolute z-40 w-full mt-1 bg-white border border-slate-200 rounded-2xl shadow-xl max-h-60 overflow-y-auto custom-scroll">
+                                        {searchResults.length > 0 ? (
+                                            searchResults.map((p) => (
+                                                <button
+                                                    key={p.nip}
+                                                    type="button"
+                                                    onClick={() => { setSelectedPegawai(p); setSearchQuery(p.nama); setIsSearching(false); }}
+                                                    className="w-full text-left p-4 hover:bg-blue-50 border-b border-slate-50"
+                                                >
+                                                    <p className="text-sm font-bold text-blue-900">{p.nama}</p>
+                                                    <p className="text-[10px] text-slate-500 font-semibold uppercase">{p.nip}</p>
+                                                </button>
+                                            ))
+                                        ) : (
+                                            <div className="p-4 text-xs text-slate-400">Tidak ditemukan</div>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+
+                            {selectedPegawai && (
+                                <div className="glass-card p-5 border-l-4 border-l-[#003366] shadow-sm">
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="col-span-2">
+                                            <span className="text-[10px] text-blue-500 font-bold uppercase">Jabatan</span>
+                                            <p className="text-sm font-bold text-slate-800">{selectedPegawai.jabatan}</p>
+                                        </div>
+                                        <div>
+                                            <span className="text-[10px] text-blue-500 font-bold uppercase">NIP</span>
+                                            <p className="text-sm font-semibold text-slate-600">{selectedPegawai.nip}</p>
+                                        </div>
+                                        <div>
+                                            <span className="text-[10px] text-blue-500 font-bold uppercase">Satker</span>
+                                            <p className="text-[11px] font-bold text-blue-900 uppercase italic">{selectedPegawai.satker}</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            <div className="space-y-2">
+                                <label className="text-[11px] font-bold text-blue-800 uppercase flex items-center gap-2">
+                                    <i data-lucide="calendar" className="w-3 h-3"></i> Tahun Laporan
+                                </label>
+                                <select 
+                                    value={tahunLaporan}
+                                    onChange={(e) => setTahunLaporan(e.target.value)}
+                                    className="w-full h-14 px-4 bg-white border border-slate-200 rounded-2xl appearance-none text-slate-700 font-medium outline-none shadow-sm"
+                                >
+                                    <option value="2025">2025</option>
+                                    <option value="2026">2026</option>
+                                </select>
+                            </div>
+
+                            <div className="space-y-2">
+                                <label className="text-[11px] font-bold text-blue-800 uppercase flex items-center gap-2">
+                                    <i data-lucide="briefcase" className="w-3 h-3"></i> Pilih Bidang
+                                </label>
+                                <select 
+                                    value={bidang}
+                                    onChange={(e) => setBidang(e.target.value)}
+                                    className="w-full h-14 px-4 bg-white border border-slate-200 rounded-2xl appearance-none text-slate-700 font-medium outline-none shadow-sm"
+                                    required
+                                >
+                                    <option value="">-- Pilih Bidang --</option>
+                                    <option value="PEMBINAAN">PEMBINAAN</option>
+                                    <option value="PIDSUS">PIDSUS</option>
+                                    <option value="PIDUM">PIDUM</option>
+                                    <option value="INTELIJEN">INTELIJEN</option>
+                                    <option value="PENGAWASAN">PENGAWASAN</option>
+                                    <option value="DATUN">DATUN</option>
+                                </select>
+                            </div>
+
+                            <div className="space-y-3">
+                                <label className="text-[11px] font-bold text-blue-800 uppercase flex items-center gap-2">
+                                    <i data-lucide="file-up" className="w-3 h-3"></i> Bukti Lapor SPT
+                                </label>
+                                <div 
+                                    onClick={() => fileInputRef.current.click()}
+                                    className="border-2 border-dashed border-blue-200 rounded-2xl p-6 text-center bg-white/60 hover:bg-blue-50 cursor-pointer transition-all"
+                                >
+                                    <input type="file" ref={fileInputRef} onChange={(e) => setFile(e.target.files[0])} className="hidden" accept=".pdf,.jpg,.jpeg,.png" />
+                                    {!file ? (
+                                        <div className="flex flex-col items-center">
+                                            <i data-lucide="upload" className="w-8 h-8 text-slate-400 mb-2"></i>
+                                            <p className="text-xs font-bold text-blue-900">Ketuk untuk Unggah</p>
+                                        </div>
+                                    ) : (
+                                        <div className="flex flex-col items-center">
+                                            <i data-lucide="check-circle" className="w-8 h-8 text-green-500 mb-2"></i>
+                                            <p className="text-[10px] font-bold text-slate-700 truncate w-full px-4">{file.name}</p>
+                                            <button type="button" onClick={(e) => { e.stopPropagation(); setFile(null); }} className="mt-2 text-[10px] text-red-500 font-bold uppercase">Hapus</button>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            <button 
+                                type="submit" 
+                                disabled={!selectedPegawai || isSubmitting}
+                                className="gradient-button w-full h-16 rounded-2xl text-[#FFD700] font-black text-base shadow-xl flex items-center justify-center gap-3 disabled:opacity-50"
+                            >
+                                {isSubmitting ? <div className="loading-spinner"></div> : "KIRIM SEKARANG"}
+                            </button>
+                        </form>
+
+                        {isSuccess && (
+                            <div className="fixed inset-0 z-[100] bg-blue-950/95 flex flex-col items-center justify-center p-6 text-center backdrop-blur-sm">
+                                <div className="bg-white p-8 rounded-[40px] shadow-2xl flex flex-col items-center max-w-sm w-full animate-in zoom-in duration-300">
+                                    <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mb-6">
+                                        <i data-lucide="shield-check" className="w-10 h-10 text-green-600"></i>
+                                    </div>
+                                    
+                                    <h2 className="text-xl font-black text-blue-950 uppercase mb-2">Laporan Terkirim</h2>
+                                    <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest mb-6 px-2">Terima kasih, SPT Anda sudah terkirim</p>
+
+                                    <div className="w-full success-card p-5 rounded-3xl text-left mb-8 shadow-sm">
+                                        <div className="space-y-4">
+                                            <div>
+                                                <span className="text-[9px] text-green-600 font-black uppercase tracking-tighter">Nama Pegawai</span>
+                                                <p className="text-sm font-extrabold text-blue-950 leading-tight uppercase">{selectedPegawai.nama}</p>
+                                            </div>
+                                            <div className="pt-3 border-t border-green-100">
+                                                <span className="text-[9px] text-green-600 font-black uppercase tracking-tighter">Satuan Kerja</span>
+                                                <p className="text-xs font-bold text-slate-700 uppercase italic">{selectedPegawai.satker}</p>
+                                            </div>
+                                            <div className="pt-3 border-t border-green-100">
+                                                <span className="text-[9px] text-green-600 font-black uppercase tracking-tighter">Waktu Pengiriman</span>
+                                                <div className="flex items-center gap-1.5 mt-0.5">
+                                                    <i data-lucide="clock" className="w-3 h-3 text-slate-400"></i>
+                                                    <p className="text-[10px] font-bold text-slate-600 uppercase">{submissionTime}</p>
+                                                </div>
+                                            </div>
+                                            <div className="pt-3 border-t border-green-100 flex justify-between items-center">
+                                                <div>
+                                                    <span className="text-[9px] text-green-600 font-black uppercase tracking-tighter">Status</span>
+                                                    <p className="text-[10px] font-black text-green-600 uppercase italic">Terverifikasi</p>
+                                                </div>
+                                                <i data-lucide="qr-code" className="w-8 h-8 text-blue-900/10"></i>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <button 
+                                        onClick={() => window.location.reload()} 
+                                        className="py-4 bg-[#003366] text-[#FFD700] font-black rounded-2xl w-full shadow-lg hover:opacity-90 transition-all active:scale-95"
+                                    >
+                                        TUTUP HALAMAN
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                    </main>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+
+        // Inisialisasi ikon Lucide
+        window.addEventListener('load', () => {
+            if (window.lucide) lucide.createIcons();
+        });
+        
+        // Polling sederhana untuk memastikan ikon ter-render di React
+        setInterval(() => {
+            if (window.lucide) lucide.createIcons();
+        }, 1000);
+    </script>
+</body>
+</html>
